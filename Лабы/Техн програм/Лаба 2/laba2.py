@@ -1,4 +1,3 @@
-"""Практическая работа: базовые конструкции языка Python (30 задач)."""
 import contextlib
 import io
 from operator import iadd, ifloordiv, imod, imul, ipow, isub, itruediv
