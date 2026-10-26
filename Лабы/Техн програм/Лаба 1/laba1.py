@@ -5,15 +5,21 @@ import re
 import tokenize
 
 STYLES = {
-    "snake_case": r"[a-z_][a-z0-9_]*",
-    "UPPER_CASE": r"[A-Z_][A-Z0-9_]*",
-    "camelCase": r"[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+",
-    "PascalCase": r"[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)*",
+    "snake_case": r"_*[a-z][a-z0-9_]*|_+",
+    "UPPER_CASE": r"_*[A-Z][A-Z0-9_]*",
+    "camelCase": r"[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*",
+    # Аббревиатуры в PascalCase пишутся заглавными: HTTPServer (PEP 8)
+    "PascalCase": r"_?[A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*",
 }
 KINDS = {"variable": "snake_case", "function": "snake_case",
          "class": "PascalCase", "constant": "UPPER_CASE"}
 FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
 DEFS = (*FUNCS, ast.ClassDef)
+# Бинарные операторы, вокруг которых PEP 8 требует пробелы
+BINARY_OPS = {"=", "==", "!=", "<", ">", "<=", ">=", "+", "-", "*", "/",
+              "//", "%", "**", "+=", "-=", "*=", "/=", "//=", "%=", "**=",
+              "->", ":="}
+UNARY_OPS = {"+", "-", "*", "**", "~"}
 
 
 def get_style(name: str) -> str:
@@ -25,6 +31,26 @@ def get_style(name: str) -> str:
 def tokens(code: str):
     """Токены кода (строки и комментарии — отдельные токены)."""
     return tokenize.generate_tokens(io.StringIO(code).readline)
+
+
+def logical_line_starts(code: str) -> set[int] | None:
+    """Номера строк, с которых начинаются логические строки кода.
+
+    Строки-продолжения (внутри скобок) и строки многострочных литералов
+    сюда не входят. Если код не токенизируется, возвращается None.
+    """
+    starts, new_line = set(), True
+    skip = {tokenize.NL, tokenize.COMMENT, tokenize.INDENT, tokenize.DEDENT}
+    try:
+        for tok in tokens(code):
+            if tok.type == tokenize.NEWLINE:
+                new_line = True
+            elif new_line and tok.type not in skip:
+                starts.add(tok.start[0])
+                new_line = False
+    except (tokenize.TokenError, SyntaxError):
+        return None
+    return starts
 
 
 # 1
@@ -43,8 +69,10 @@ def is_valid_python_identifier(name: str, kind: str) -> bool:
 # 3
 def to_pep8_name(name: str, kind: str) -> str:
     """Преобразовать имя к стилю PEP 8."""
-    words = re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+", name)
     style = KINDS[kind]
+    if get_style(name) == style:
+        return name
+    words = re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z0-9]+", name)
     if style == "PascalCase":
         return "".join(w.capitalize() for w in words)
     joined = "_".join(words)
@@ -53,13 +81,20 @@ def to_pep8_name(name: str, kind: str) -> str:
 
 # 4
 def check_indentation(code: str, indent_size: int = 4) -> list[str]:
-    """Найти ошибки отступов."""
+    """Найти ошибки отступов.
+
+    Строки-продолжения внутри скобок не проверяются на кратность:
+    PEP 8 разрешает выравнивать их по открывающей скобке.
+    """
     errors = []
+    starts = logical_line_starts(code)
     for i, line in enumerate(code.splitlines(), 1):
         indent = line[:len(line) - len(line.lstrip())]
         if " " in indent and "\t" in indent:
             errors.append(f"Строка {i}: смешаны табы и пробелы")
-        elif line.strip() and len(indent) % indent_size and "\t" not in indent:
+        elif (line.strip() and "\t" not in indent
+              and len(indent) % indent_size
+              and (starts is None or i in starts)):
             errors.append(f"Строка {i}: отступ не кратен {indent_size}")
     return errors
 
@@ -81,10 +116,14 @@ def extract_module_structure(code: str) -> dict:
         if isinstance(node, ast.Import):
             res["imports"] += [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom):
-            res["imports"].append(node.module)
-        elif isinstance(node, ast.Assign):
-            res["constants"] += [t.id for t in node.targets
-                                 if isinstance(t, ast.Name) and t.id.isupper()]
+            # Относительный импорт: from . import x -> ".", from ..a -> "..a"
+            res["imports"].append("." * node.level + (node.module or ""))
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = (node.targets if isinstance(node, ast.Assign)
+                       else [node.target])
+            res["constants"] += [t.id for t in targets
+                                 if isinstance(t, ast.Name)
+                                 and get_style(t.id) == "UPPER_CASE"]
         elif isinstance(node, ast.ClassDef):
             res["classes"].append(node.name)
         elif isinstance(node, FUNCS):
@@ -119,7 +158,7 @@ def add_main_guard(code: str, main_function: str = "main") -> str:
             f"    {main_function}()\n")
 
 
-# 10 (в Word — 11)
+# 10
 def line_length_stats(code: str, max_length: int = 79) -> dict:
     """Статистика по длине строк."""
     lengths = [len(line) for line in code.splitlines()]
@@ -131,7 +170,7 @@ def line_length_stats(code: str, max_length: int = 79) -> dict:
     }
 
 
-# 11 (в Word — 12)
+# 11
 def check_imports_order(code: str) -> list[str]:
     """Найти импорты после определений функций/классов."""
     errors, seen_def = [], False
@@ -142,27 +181,79 @@ def check_imports_order(code: str) -> list[str]:
     return errors
 
 
-# 12 (в Word — 13)
+# 12
 def max_nesting_level(code: str) -> int:
     """Максимальная вложенность блоков по отступам."""
+    lines = code.expandtabs(4).splitlines()
+    starts = logical_line_starts(code)
     return max(((len(s) - len(s.lstrip())) // 4
-                for s in code.expandtabs(4).splitlines() if s.strip()),
+                for i, s in enumerate(lines, 1)
+                if s.strip() and (starts is None or i in starts)),
                default=0)
 
 
-# 13 (в Word — 14)
+def operator_kind(tok, prev, depth: int, annotated: bool) -> str:
+    """Роль токена-оператора: "binary", "unary", "kwarg" или ""."""
+    if tok.type != tokenize.OP:
+        return ""
+    if tok.string == "=" and depth and not annotated:
+        return "kwarg"  # именованный аргумент: f(a=1)
+    after_operand = prev is not None and (
+        prev.type in (tokenize.NUMBER, tokenize.STRING)
+        or prev.type == tokenize.NAME and not keyword.iskeyword(prev.string)
+        or prev.string in (")", "]", "}")
+        or prev.string in ("True", "False", "None"))
+    if tok.string == "~" or tok.string in UNARY_OPS and not after_operand:
+        return "unary"  # унарный минус, распаковка *args, **kwargs
+    return "binary" if tok.string in BINARY_OPS else ""
+
+
+# 13
 def fix_spaces_around_operators(line: str) -> str:
-    """Добавить пробелы вокруг операторов (кроме строк и комментариев)."""
+    """Добавить пробелы вокруг операторов (кроме строк и комментариев).
+
+    Унарные операторы (-1, *args), именованные аргументы (f(a=1)) и
+    числа вида 1e-5 остаются без пробелов, как требует PEP 8.
+    """
     indent = line[:len(line) - len(line.lstrip())]
-    parts = re.split(r"""("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#.*)""",
-                     line.strip())
-    op = r"\s*(==|!=|<=|>=|[+\-*/%]=|//|[=<>+\-*/%])\s*"
-    for i in range(0, len(parts), 2):  # чётные части — код
-        parts[i] = re.sub(op, r" \1 ", parts[i])
-    return indent + "".join(parts).strip()
+    code = line.strip()
+    toks = []
+    try:
+        for tok in tokens(code):
+            if tok.type in (tokenize.NEWLINE, tokenize.NL,
+                            tokenize.ENDMARKER):
+                break
+            toks.append(tok)
+    except (tokenize.TokenError, SyntaxError):
+        if not toks:
+            return line
+    out, prev, prev_kind, pos = [], None, "", 0
+    depth, annotated = 0, False
+    for tok in toks:
+        kind = operator_kind(tok, prev, depth, annotated)
+        gap = code[pos:tok.start[1]]
+        if tok.type != tokenize.COMMENT:
+            if "binary" in (kind, prev_kind):
+                gap = " "
+            elif kind == "kwarg" or prev_kind in ("kwarg", "unary"):
+                gap = ""
+            elif kind == "unary" and prev.type == tokenize.NAME:
+                gap = " "  # return -x, else -1
+        out.append(gap + tok.string)
+        if tok.string in ("(", "[", "{"):
+            depth += 1
+            annotated = False
+        elif tok.string in (")", "]", "}"):
+            depth -= 1
+        elif tok.string == ",":
+            annotated = False
+        elif tok.string == ":" and depth:
+            annotated = True  # def f(a: int = 1) — тут пробелы нужны
+        prev, prev_kind, pos = tok, kind, tok.end[1]
+    return indent + "".join(out) + code[pos:]
 
 
-# 14 (в Word — 15)
+# 14
 def analyze_comments(code: str) -> dict:
     """Посчитать комментарии и строки docstring."""
     comments = {t.start[0] for t in tokens(code) if t.type == tokenize.COMMENT}
@@ -174,7 +265,7 @@ def analyze_comments(code: str) -> dict:
             "comment_ratio": round(len(comments) / total, 2)}
 
 
-# 15 (в Word — 16)
+# 15
 def find_long_functions(code: str,
                         max_lines: int = 50) -> list[tuple[str, int]]:
     """Найти функции с телом длиннее max_lines."""
@@ -183,21 +274,31 @@ def find_long_functions(code: str,
     return [f for f in found if f[1] > max_lines]
 
 
-# 16 (в Word — 17)
+# 16
 def normalize_blank_lines_between_functions(code: str) -> str:
-    """Две пустые строки между функциями/классами верхнего уровня."""
+    """Две пустые строки между функциями/классами верхнего уровня.
+
+    Комментарий, стоящий вплотную над def/class, остаётся с ним.
+    """
     out = []
     for line in code.splitlines():
         if re.match(r"@|def |class |async def ", line):
+            head = len(out)  # начало блока «комментарии + определение»
+            if out and out[-1].strip():
+                while head and out[head - 1].startswith("#"):
+                    head -= 1
+            block = out[head:]
+            del out[head:]
             while out and not out[-1].strip():
                 out.pop()
             if out and not out[-1].startswith("@"):
                 out += ["", ""]
+            out += block
         out.append(line)
     return "\n".join(out) + "\n"
 
 
-# 17 (в Word — 18)
+# 17
 def simple_linter(code: str) -> list[str]:
     """Комплексная проверка стиля."""
     msgs = [(int(m.split()[1][:-1]), m) for m in check_indentation(code)]
@@ -219,7 +320,7 @@ def coverage(code: str) -> float:
     return round(100 * sum(docs.values()) / len(docs), 1) if docs else 100.0
 
 
-# 18 (в Word — 19)
+# 18
 def style_report(code: str, module_name: str) -> str:
     """Текстовый отчёт о стиле модуля."""
     struct = extract_module_structure(code)
@@ -232,27 +333,58 @@ def style_report(code: str, module_name: str) -> str:
             f"\nMagic numbers found: {len(find_magic_numbers(code))}")
 
 
-# 19 (в Word — 26)
+class MagicNumberExtractor(ast.NodeTransformer):
+    """Заменяет целые числа, кроме 0 и 1, на константы VALUE_<число>."""
+
+    def __init__(self):
+        self.values = set()
+
+    def visit_Constant(self, node):
+        """Число -> имя константы (строки и bool не трогаем)."""
+        value = node.value
+        if type(value) is int and value > 1:
+            self.values.add(value)
+            return ast.copy_location(ast.Name(f"VALUE_{value}"), node)
+        return node
+
+
+# 19
 def refactor_bad_code(code: str) -> str:
     """Улучшить плохо оформленный код (простой шаблон)."""
     tree = ast.parse(code)
+    # Параметры переименовываем всегда (W -> w), прочие имена в UPPER_CASE
+    # считаем константами и не трогаем
+    params = {n.arg for n in ast.walk(tree) if isinstance(n, ast.arg)}
     for n in ast.walk(tree):
-        if isinstance(n, FUNCS):
-            n.name = to_pep8_name(n.name, "function")
+        if isinstance(n, DEFS):
+            kind = "class" if isinstance(n, ast.ClassDef) else "function"
+            n.name = to_pep8_name(n.name, kind)
             if not ast.get_docstring(n):
-                n.body.insert(0, ast.Expr(ast.Constant("TODO: описание.")))
+                # С docstring тело не пустое, поэтому pass больше не нужен
+                n.body = [ast.Expr(ast.Constant("TODO: описание."))] + [
+                    s for s in n.body if not isinstance(s, ast.Pass)]
         elif isinstance(n, ast.arg):
             n.arg = to_pep8_name(n.arg, "variable")
-        elif isinstance(n, ast.Name):
+        elif isinstance(n, ast.Name) and (
+                n.id in params or get_style(n.id) != "UPPER_CASE"):
             n.id = to_pep8_name(n.id, "variable")
-    new = ast.unparse(tree)  # ast.unparse сам исправляет отступы и пробелы
-    nums = sorted({v for _, v in find_magic_numbers(new)})
-    new = re.sub(r"\b\d+\b", lambda m: "VALUE_" * (int(m[0]) > 1) + m[0], new)
-    consts = "".join(f"VALUE_{v} = {v}\n" for v in nums)
-    return normalize_blank_lines_between_functions(consts + new)
+    extractor = MagicNumberExtractor()
+    tree = extractor.visit(tree)
+    # Константы ставим после docstring модуля и импортов
+    pos = 0
+    while pos < len(tree.body) and (
+            isinstance(tree.body[pos], (ast.Import, ast.ImportFrom))
+            or pos == 0 and ast.get_docstring(tree)):
+        pos += 1
+    tree.body[pos:pos] = [
+        ast.Assign([ast.Name(f"VALUE_{v}", ast.Store())], ast.Constant(v))
+        for v in sorted(extractor.values)]
+    # ast.unparse сам исправляет отступы и пробелы
+    new = ast.unparse(ast.fix_missing_locations(tree))
+    return normalize_blank_lines_between_functions(new)
 
 
-# 20 (в Word — 27)
+# 20
 def compare_module_versions(old_code: str, new_code: str) -> dict:
     """Сравнить две версии модуля."""
     old = extract_module_structure(old_code)

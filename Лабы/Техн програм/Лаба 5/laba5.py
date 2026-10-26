@@ -17,6 +17,7 @@ def transactions_per_hour(networks):
 
 
 def task_1():
+    """Задание 1: вывести транзакции за час и сеть-лидера."""
     networks = {"Ethereum": 30, "Binance Smart Chain": 160, "Solana": 50_000}
     per_hour, leader = transactions_per_hour(networks)
     for name, count in per_hour.items():
@@ -31,6 +32,7 @@ def read_range(writes):
 
 
 def task_2():
+    """Задание 2: вывести диапазон операций чтения."""
     low, high = read_range(500)
     print(f"Записей в секунду: 500\nМинимум чтений/с: {low:,}\n"
           f"Максимум чтений/с: {high:,}")
@@ -50,6 +52,7 @@ class Block:
 
 
 def task_3():
+    """Задание 3: собрать и вывести цепочку из трёх блоков."""
     chain = [Block(0, "Genesis", "0")]
     for i in (1, 2):
         chain.append(Block(i, f"Транзакция {i}", chain[-1].hash))
@@ -60,19 +63,24 @@ def task_3():
 
 # 4
 def task_4():
+    """Задание 4: вывести SHA-256 строки "blockchain"."""
     print(f"SHA-256('blockchain') =\n{sha256('blockchain')}")
 
 
 # 5
 def mine(data, difficulty):
     """Подобрать nonce, при котором хэш начинается с difficulty нулей."""
+    prefix = "0" * difficulty
     nonce = 0
-    while not sha256(data + str(nonce)).startswith("0" * difficulty):
+    h = sha256(data + str(nonce))
+    while not h.startswith(prefix):
         nonce += 1
-    return nonce, sha256(data + str(nonce))
+        h = sha256(data + str(nonce))
+    return nonce, h
 
 
 def task_5():
+    """Задание 5: найти nonce для сложности 4."""
     nonce, block_hash = mine("block1", 4)
     print(f"difficulty=4, nonce={nonce}\nhash={block_hash}")
 
@@ -90,6 +98,7 @@ def merkle_root(transactions):
 
 
 def task_6():
+    """Задание 6: вывести корень дерева Меркла."""
     print(f"Merkle root: {merkle_root(['tx1', 'tx2', 'tx3', 'tx4'])}")
 
 
@@ -100,6 +109,7 @@ def is_attack_threat(share):
 
 
 def task_7():
+    """Задание 7: проверить доли мощности на угрозу атаки 51%."""
     for p in (0.3, 0.51, 0.49, 0.6):
         verdict = "УГРОЗА (атака 51%)" if is_attack_threat(p) else "безопасно"
         print(f"Доля мощности {p:.0%}: {verdict}")
@@ -113,6 +123,7 @@ def build_tangle(count):
 
 
 def task_8():
+    """Задание 8: вывести структуру подтверждений Tangle."""
     for i, links in enumerate(build_tangle(6)):
         print(f"Транзакция {i} подтверждает: {links or '— (начальная)'}")
 
@@ -124,6 +135,7 @@ def confirmation_time(n, k=1000):
 
 
 def task_9():
+    """Задание 9: вывести время подтверждения в IOTA."""
     for n in (10, 100, 1000):
         print(f"n={n:>4} транзакций -> время подтверждения = "
               f"{confirmation_time(n):.2f} усл.ед.")
@@ -133,11 +145,13 @@ def task_9():
 def index_address(transactions, addr):
     """Транзакции адреса и его баланс (входящие минус исходящие)."""
     own = [t for t in transactions if addr in (t["from"], t["to"])]
-    balance = sum(t["amount"] * (1 if t["to"] == addr else -1) for t in own)
-    return own, balance
+    incoming = sum(t["amount"] for t in own if t["to"] == addr)
+    outgoing = sum(t["amount"] for t in own if t["from"] == addr)
+    return own, incoming - outgoing
 
 
 def task_10():
+    """Задание 10: вывести транзакции и баланс Alice."""
     txs = [{"from": "Alice", "to": "Bob", "amount": 50},
            {"from": "Bob", "to": "Alice", "amount": 20},
            {"from": "Bob", "to": "Carol", "amount": 30},
@@ -159,6 +173,7 @@ def subgraph_stats(log):
 
 
 def task_11():
+    """Задание 11: вывести статистику запросов по сабграфам."""
     log = [("uniswap", 5000), ("aave", 3000), ("uniswap", 7500),
            ("compound", 4500), ("aave", 5500)]
     totals, busiest, total = subgraph_stats(log)
@@ -179,6 +194,7 @@ def verify(message, signature, private_key):
 
 
 def task_12():
+    """Задание 12: подписать сообщение и проверить подпись."""
     message, key = "Alice -> Bob: 10 BTC", "secret_key"
     signature = sign(message, key)
     print(f"Подпись: {signature[:24]} ...\n"
@@ -194,6 +210,7 @@ def quantum_states(n):
 
 
 def task_13():
+    """Задание 13: сравнить число квантовых и классических состояний."""
     for n in (1, 2, 8, 127):
         print(f"{n:>3} кубит(ов): {quantum_states(n):,} состояний "
               f"одновременно | классика: {n} состояний")
@@ -212,6 +229,7 @@ def factorize(n):
 
 
 def task_14():
+    """Задание 14: разложить 15, 21 и 91 на простые множители."""
     for n in (15, 21, 91):
         print(f"{n} = {' x '.join(map(str, factorize(n)))}")
 
@@ -225,6 +243,7 @@ def forecast_qubits(generations):
 
 
 def task_15():
+    """Задание 15: вывести прогноз роста числа кубитов."""
     generations = [127, 433, 1121]
     rates, average, forecast = forecast_qubits(generations)
     print(f"Поколения кубитов: {generations}\n"

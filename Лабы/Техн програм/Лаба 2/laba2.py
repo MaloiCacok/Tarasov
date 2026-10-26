@@ -1,6 +1,5 @@
 import contextlib
 import io
-from operator import iadd, ifloordiv, imod, imul, ipow, isub, itruediv
 
 
 # 1
@@ -31,14 +30,37 @@ def swap_values(a, b):
 # 3
 def bool_transform(value):
     """Истинность значения без bool()."""
-    return True if value else False
+    if value:
+        return True
+    return False
 
 
 # 4
 def compound_operations(a, b):
-    """Результаты +=, -=, *=, /=, //=, %=, **= (iadd — это +=, и т. д.)."""
-    ops = (iadd, isub, imul, itruediv, ifloordiv, imod, ipow)
-    return [round(op(a, b), 2) for op in ops]
+    """Результаты +=, -=, *=, /=, //=, %=, **= (каждая над копией a)."""
+    results = []
+    x = a
+    x += b
+    results.append(x)
+    x = a
+    x -= b
+    results.append(x)
+    x = a
+    x *= b
+    results.append(x)
+    x = a
+    x /= b
+    results.append(round(x, 2))
+    x = a
+    x //= b
+    results.append(x)
+    x = a
+    x %= b
+    results.append(x)
+    x = a
+    x **= b
+    results.append(x)
+    return results
 
 
 # 5
@@ -60,16 +82,21 @@ def logical_and(a, b, c):
 # 7
 def logical_or(a, b, c):
     """True, если хотя бы один аргумент истинный (без or)."""
-    for item in (a, b, c):
-        if item:
-            return True
+    if a:
+        return True
+    if b:
+        return True
+    if c:
+        return True
     return False
 
 
 # 8
 def is_between(value, low, high):
-    """Проверить low <= value <= high одним условием."""
-    return value >= low and value <= high
+    """Проверить low <= value <= high одним составным условием."""
+    if value >= low and value <= high:
+        return True
+    return False
 
 
 # 9
@@ -110,12 +137,16 @@ def if_elif_else_chain(x):
 # 13
 def abs_value(x):
     """Модуль числа без abs()."""
-    return -x if x < 0 else x
+    if x < 0:
+        return -x
+    return x
 
 
 # 14
 def binary_representation(n):
     """Двоичная запись числа без bin()."""
+    if n < 0:
+        return "-" + binary_representation(-n)
     digits = ""
     while n > 0:
         digits = str(n % 2) + digits
@@ -133,6 +164,8 @@ def custom_round(number, ndigits):
 # 16
 def find_max_min(numbers):
     """Максимум и минимум списка без max() и min()."""
+    if not numbers:
+        raise ValueError("find_max_min() получила пустой список")
     high = low = numbers[0]
     for x in numbers:
         high = x if x > high else high
@@ -161,7 +194,12 @@ def any_true(iterable):
 # 19
 def custom_enumerate(sequence, start=0):
     """Аналог enumerate()."""
-    return [(start + i, sequence[i]) for i in range(len(sequence))]
+    result = []
+    index = start
+    for item in sequence:
+        result.append((index, item))
+        index += 1
+    return result
 
 
 # 20
@@ -202,6 +240,8 @@ def custom_sorted(iterable, reverse=False):
 # 25
 def sum_digits(n):
     """Сумма цифр числа циклом while."""
+    if n < 0:
+        n = -n
     total = 0
     while n > 0:
         total += n % 10
@@ -217,25 +257,29 @@ def count_vowels(text):
 
 # 27
 def power(base, exp):
-    """Возведение в степень без ** и pow()."""
+    """Возведение в целую степень без ** и pow()."""
     result = 1
-    for _ in range(exp):
+    for _ in range(exp if exp >= 0 else -exp):
         result *= base
-    return result
+    return result if exp >= 0 else 1 / result
 
 
 # 28
 def is_prime(n):
-    """Проверка числа на простоту."""
+    """Проверка числа на простоту (делители от 2 до sqrt(n))."""
+    if n < 2:
+        return False
     for d in range(2, int(n ** 0.5) + 1):
         if n % d == 0:
             return False
-    return n > 1
+    return True
 
 
 # 29
 def factorial(n):
     """Факториал циклом for."""
+    if n < 0:
+        raise ValueError("факториал определён только для n >= 0")
     result = 1
     for i in range(2, n + 1):
         result *= i
@@ -250,7 +294,7 @@ def fibonacci(n):
         a, b = b, a + b
     return a
 
- 
+
 TESTS = [
     ('convert_types([1, "2", "hello", 3.5])', ["1", 2, "hello", "3.5"]),
     ("swap_values(5, 10)", (10, 5)),
