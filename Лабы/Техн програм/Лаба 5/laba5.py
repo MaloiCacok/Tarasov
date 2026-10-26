@@ -1,4 +1,3 @@
-"""Практикум по Python: масштабирование блокчейн-технологий (15 заданий)."""
 import contextlib
 import hashlib
 import io
