@@ -1,11 +1,3 @@
-"""Кейсы: Blender и программирование для VR на Python (15 кейсов).
-
-Часть 1 (кейсы 1-8) использует Python API Blender (bpy) и работает только
-внутри Blender: вкладка Scripting -> Open -> laba3.py -> Run Script, либо
-из консоли: blender -b --python laba3.py
-Часть 2 (кейсы 9-15) — расчёты на NumPy, работает и в обычном Python
-(нужен пакет numpy: pip install numpy; в Blender он уже встроен).
-"""
 import contextlib
 import io
 import math
@@ -15,14 +7,10 @@ import tempfile
 import numpy as np
 
 try:
-    import bpy
-except ImportError:  # запуск вне Blender — доступна только часть 2
+    import bpy  # pyright: ignore[reportMissingModuleSource]
+except ImportError:
     bpy = None
 
-
-# ---------------------------------------------------------------------------
-# Часть 1. Работа с Blender (Python API bpy)
-# ---------------------------------------------------------------------------
 
 def clear_scene():
     """Удалить все объекты, чтобы сцена собиралась с чистого листа."""
@@ -193,10 +181,6 @@ def case_8():
     path = os.path.join(tempfile.gettempdir(), "vr_scene.glb")
     print(f"Экспортировано в: {export_glb(path)}")
 
-
-# ---------------------------------------------------------------------------
-# Часть 2. Программирование для VR (расчёты на Python)
-# ---------------------------------------------------------------------------
 
 # 9
 def eye_positions(head, right, ipd):
