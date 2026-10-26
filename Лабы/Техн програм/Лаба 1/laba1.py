@@ -1,4 +1,3 @@
-"""Практическая работа: инструменты проверки стиля кода по PEP 8."""
 import ast
 import io
 import keyword
